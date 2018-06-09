@@ -156,13 +156,11 @@ def compile_latex():
     fname = os.path.basename(config['output_file'])
     os.chdir(rundir)
     cmd = config['compile_command'].replace("$file", fname)
-    subprocess.run(cmd)
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     os.remove(fname)
     #FIXME: Fix ouput files, .log and .synctex files to use the right file names
 
 def main():
-    os.system(r'texify --verbose --synctex --pdf --clean --tex-option="-interaction=nonstopmode" --tex-option="-file-line-error" D:/FriendlyFire/Desktop/pytex/test/gxd.tex')
-    return
     log("Parsing command arguments...", True)
     parse_args()
     log("Loading configuration files...", True)
