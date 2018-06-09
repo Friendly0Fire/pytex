@@ -1,0 +1,7 @@
+compile_command: >
+            texify
+            --synctex
+            --pdf
+            --tex-option="-interaction=nonstopmode"
+            --tex-option="-file-line-error"
+            $file
