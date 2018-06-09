@@ -1,1 +1,2 @@
 main_file: test/gxd.tex
+output_file: test/gxd.c.tex
