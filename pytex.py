@@ -111,12 +111,28 @@ def parse_latex_file(file, temporary_list):
     if file == config['main_file']:
         output_lines.append(r"\newenvironment{pytex}{}{}")
 
+    pyinput = ""
+    inpyinput = False
     with open(file, "r") as f:
         for lno,l in enumerate(itertools.chain(f, [''])):
             lno += 1
             l = l.rstrip()
 
+            if inpyinput:
+                end_match = re.match(r"^\s*\\end\{pytex\}\s*(%.*)?$", l)
+                if end_match is not None:
+                    eval(pyinput) # FIXME: Handle scoping and errors
+                    inpyinput = False
+                else:
+                    pyinput += l + "\n"
+                    output_lines.append("%" + l)
+                    continue
+
             # Parse for \begin{pytex} \end{pytex} here
+            begin_match = re.match(r"^\s*\\begin\{pytex\}\s*(%.*)?$", l)
+            if begin_match is not None:
+                pyinput = ""
+                inpyinput = True
 
             # Look for \input{file}
             input_match = re.match(r"^\s*\\((?P<isinput>input)|(?P<isinclude>include))\{(?P<inputfile>.+)\}\s*(%.*)?$", l)
@@ -191,7 +207,7 @@ def compile_latex(temporary_list):
 
     outnamenoext = os.path.splitext(fname)[0]
     innamenoext = os.path.splitext(os.path.basename(config['main_file']))[0]
-    for ext in [".log", ".pdf", ".synctex.gz", ".synctex"]:
+    for ext in [".log", ".pdf", ".synctex.gz", ".synctex"]: # FIXME: These should perform a binary file read/write/erase rather than just manipulating the filesystem
         if os.path.isfile(outnamenoext + ext):
             if os.path.isfile(innamenoext + ext):
                 os.remove(innamenoext + ext)
