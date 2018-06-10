@@ -1,7 +1,9 @@
 compile_command: >
             texify
+            --verbose
             --synctex
             --pdf
+            --clean
             --tex-option="-interaction=nonstopmode"
             --tex-option="-file-line-error"
             $file

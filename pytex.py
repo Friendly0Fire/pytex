@@ -14,6 +14,10 @@ def load_yaml(file):
     with open(file, "r") as fstream:
         return yaml.load(fstream)
 
+def add_suffix(fullname):
+    global config
+    (name, ext) = os.path.splitext(fullname)
+    return name + config['output_suffix'] + ext
 
 #################
 # CONFIGURATION #
@@ -29,7 +33,7 @@ default_compile_commands = {
 
 # Configuration settings read from the config files
 config = {
-    'output_file': None,
+    'output_suffix': '.c',
     'user_config_file': 'pytex.user.yaml',
     'main_file': "main.tex",
     'compile_command': None
@@ -79,9 +83,8 @@ def load_config():
         log("Could not find main file '" + config['main_file'] + "'; aborting.")
         sys.exit(1)
 
-    if config['output_file'] is None:
-        (root, ext) = os.path.splitext(config['main_file'])
-        config['output_file'] = root + ".c" + ext
+    if config['output_suffix'] is None:
+        config['output_suffix'] = ".c"
 
     # If the compile command has not been set in any config file,
     # try to automatically determine a sensible one by fishing
@@ -101,20 +104,13 @@ def load_config():
 # LATEX HANDLING #
 ##################
 
-def parse_latex_file(file):
+def parse_latex_file(file, temporary_list):
     log("Parsing input file '" + file + "'...", True)
     output_lines = []
 
     if file == config['main_file']:
         output_lines.append(r"\newenvironment{pytex}{}{}")
 
-    rundir = os.path.dirname(file)
-    prevrundir = None
-    if rundir:
-        prevrundir = os.getcwd()
-        os.chdir(rundir)
-
-    file = os.path.basename(file)
     with open(file, "r") as f:
         for lno,l in enumerate(itertools.chain(f, [''])):
             lno += 1
@@ -123,41 +119,42 @@ def parse_latex_file(file):
             # Parse for \begin{pytex} \end{pytex} here
 
             # Look for \input{file}
-            input_match = re.match(r"^\s*\\input\{(?P<inputfile>.+)\}\s*(%.*)?$", l)
+            input_match = re.match(r"^\s*\\((?P<isinput>input)|(?P<isinclude>include))\{(?P<inputfile>.+)\}\s*(%.*)?$", l)
             if input_match is not None:
                 input_file = input_match.group("inputfile")
                 if not os.path.isfile(input_file):
                     input_file += ".tex"
                 if os.path.isfile(input_file):
-                    output_lines += parse_latex_file(input_file) #FIXME: This shouldn't dump all the files in one, it should generate separate .c.tex files then clean them up afterwards
-                l = None
+                    parse_latex_file(input_file, temporary_list)
+                    l = r"\%s{%s}" % ("include" if input_match.group("isinclude") != None else "input", os.path.splitext(add_suffix(input_file))[0])
+                else:
+                    l = None
 
             if l is not None:
                 output_lines.append(l)
 
-    if prevrundir:
-        os.chdir(prevrundir)
-    return output_lines
-
-def parse_latex():
-    global config
-
-    outdir = os.path.dirname(config['output_file'])
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-
-    with open(config['output_file'], "w") as f:
-        lines = parse_latex_file(config['main_file'])
-        compiled = "\n".join(lines)
+    generated_file = add_suffix(file)
+    temporary_list.append(generated_file)
+    with open(generated_file, "w") as f:
+        compiled = "\n".join(output_lines)
         f.write(compiled)
 
-def compile_latex():
-    rundir = os.path.dirname(config['output_file'])
-    fname = os.path.basename(config['output_file'])
-    os.chdir(rundir)
+def parse_latex(temporary_list):
+    global config
+
+    path = os.path.dirname(config['main_file'])
+    file = os.path.basename(config['main_file'])
+
+    os.chdir(path)
+
+    parse_latex_file(file, temporary_list)
+
+def compile_latex(temporary_list):
+    fname = add_suffix(os.path.basename(config['main_file']))
     cmd = config['compile_command'].replace("$file", fname)
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os.remove(fname)
+    for f in temporary_list:
+        os.remove(f)
     #FIXME: Fix ouput files, .log and .synctex files to use the right file names
 
 def main():
@@ -165,10 +162,12 @@ def main():
     parse_args()
     log("Loading configuration files...", True)
     load_config()
+
     log("Parsing LaTeX input files...", True)
-    parse_latex()
+    temporary_list = []
+    parse_latex(temporary_list)
     log("Producing final LaTeX file and passing to compiler...", True)
-    compile_latex()
+    compile_latex(temporary_list)
 
 if __name__ == '__main__':
     main()
