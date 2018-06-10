@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import sys, yaml, platform, shutil, os, itertools, re, subprocess
+import sys, yaml, platform, shutil, os, itertools, re, subprocess, gzip
 
 #############
 # UTILITIES #
@@ -134,7 +134,7 @@ def parse_latex_file(file, temporary_list):
                 output_lines.append(l)
 
     generated_file = add_suffix(file)
-    temporary_list.append(generated_file)
+    temporary_list.append((file, generated_file))
     with open(generated_file, "w") as f:
         compiled = "\n".join(output_lines)
         f.write(compiled)
@@ -149,18 +149,56 @@ def parse_latex(temporary_list):
 
     parse_latex_file(file, temporary_list)
 
+def fix_synctex(basename, temporary_list):
+    fstream = None
+    isgz = False
+    if os.path.isfile(basename + ".synctex.gz"):
+        fstream = gzip.open(basename + ".synctex.gz", "rt")
+        isgz = True
+    elif os.path.isfile(basename + ".synctex"):
+        fstream = open(basename + ".synctex", "r")
+
+    if fstream is None:
+        return
+
+    outstr = ""
+    with fstream:
+        for lno,l in enumerate(itertools.chain(fstream, [''])):
+            lno += 1
+
+            if l.startswith("Input:"):
+                for ri,ro in temporary_list:
+                    l = l.replace(ro, ri)
+                    # Windows-specific fix
+                    l = l.replace(ro.replace("/", "\\"), ri.replace("/", "\\"))
+
+            outstr += l.rstrip() + "\n"
+
+    if isgz:
+        fstream = gzip.open(basename + ".synctex.gz", "wt")
+    else:
+        fstream = open(basename + ".synctex", "w")
+
+    with fstream:
+        fstream.write(outstr)
+
 def compile_latex(temporary_list):
     fname = add_suffix(os.path.basename(config['main_file']))
     cmd = config['compile_command'].replace("$file", fname)
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for f in temporary_list:
-        os.remove(f)
+    for fi,fo in temporary_list:
+        os.remove(fo)
 
     outnamenoext = os.path.splitext(fname)[0]
     innamenoext = os.path.splitext(os.path.basename(config['main_file']))[0]
-    for ext in [".log", ".pdf", ".synctex.gz"]:
+    for ext in [".log", ".pdf", ".synctex.gz", ".synctex"]:
         if os.path.isfile(outnamenoext + ext):
+            if os.path.isfile(innamenoext + ext):
+                os.remove(innamenoext + ext)
             os.rename(outnamenoext + ext, innamenoext + ext)
+
+    log("Fixing synctex, if set...", True)
+    fix_synctex(innamenoext, temporary_list)
 
 def main():
     log("Parsing command arguments...", True)
@@ -171,6 +209,7 @@ def main():
     log("Parsing LaTeX input files...", True)
     temporary_list = []
     parse_latex(temporary_list)
+
     log("Producing final LaTeX file and passing to compiler...", True)
     compile_latex(temporary_list)
 
