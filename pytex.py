@@ -155,7 +155,12 @@ def compile_latex(temporary_list):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for f in temporary_list:
         os.remove(f)
-    #FIXME: Fix ouput files, .log and .synctex files to use the right file names
+
+    outnamenoext = os.path.splitext(fname)[0]
+    innamenoext = os.path.splitext(os.path.basename(config['main_file']))[0]
+    for ext in [".log", ".pdf", ".synctex.gz"]:
+        if os.path.isfile(outnamenoext + ext):
+            os.rename(outnamenoext + ext, innamenoext + ext)
 
 def main():
     log("Parsing command arguments...", True)
