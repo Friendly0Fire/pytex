@@ -205,13 +205,15 @@ def compile_latex(temporary_list):
     for fi,fo in temporary_list:
         os.remove(fo)
 
+    log("Fixing output file names...", True)
     outnamenoext = os.path.splitext(fname)[0]
     innamenoext = os.path.splitext(os.path.basename(config['main_file']))[0]
-    for ext in [".log", ".pdf", ".synctex.gz", ".synctex"]: # FIXME: These should perform a binary file read/write/erase rather than just manipulating the filesystem
+    for ext in [".log", ".pdf", ".synctex.gz", ".synctex"]:
         if os.path.isfile(outnamenoext + ext):
-            if os.path.isfile(innamenoext + ext):
-                os.remove(innamenoext + ext)
-            os.rename(outnamenoext + ext, innamenoext + ext)
+            with open(outnamenoext + ext, "rb") as istream:
+                with open(innamenoext + ext, "wb") as ostream:
+                    ostream.write(istream.read())
+            os.remove(outnamenoext + ext)
 
     log("Fixing synctex, if set...", True)
     fix_synctex(innamenoext, temporary_list)
