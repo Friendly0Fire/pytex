@@ -1,9 +1,18 @@
 # -*- coding: utf-8 -*-
-import sys, yaml, platform, shutil, os, itertools, re, subprocess, gzip
+import sys, yaml, platform, shutil, os, itertools, re, subprocess, gzip, shlex, threading, queue, time
 
 #############
 # UTILITIES #
 #############
+
+def enqueue_output(out, queue, prepend=""):
+    try:
+        for line in iter(out.readline, b''):
+            l = line.rstrip()
+            if l != '':
+                queue.put(prepend + l)
+    except ValueError:
+        return
 
 def log(msg, verbose=False):
     global args
@@ -201,9 +210,34 @@ def fix_synctex(basename, temporary_list):
 def compile_latex(temporary_list):
     fname = add_suffix(os.path.basename(config['main_file']))
     cmd = config['compile_command'].replace("$file", fname)
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for fi,fo in temporary_list:
-        os.remove(fo)
+    cmd = shlex.split(cmd)
+    q = queue.Queue()
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True, encoding="utf8", errors="ignore") as proc:
+        t = threading.Thread(target=enqueue_output, args=(proc.stdout, q, "O> "))
+        t.daemon = True
+        t.start()
+        t2 = threading.Thread(target=enqueue_output, args=(proc.stderr, q, "E> "))
+        t2.daemon = True
+        t2.start()
+        while proc.poll() is None or not q.empty():
+            try:
+                line = q.get_nowait()
+                log(line)
+                q.task_done()
+            except queue.Empty:
+                pass
+        log("Compiler return code: " + str(proc.returncode))
+        proc.stdout.close()
+        proc.stderr.close()
+
+    for _,fo in temporary_list:
+        for i in range(1, 3+1):
+            try:
+                os.remove(fo)
+                break
+            except PermissionError:
+                log("Could not delete file %s, %s" % (fo, "retrying..." if i < 3 else "giving up."))
+                time.sleep(1)
 
     log("Fixing output file names...", True)
     outnamenoext = os.path.splitext(fname)[0]
