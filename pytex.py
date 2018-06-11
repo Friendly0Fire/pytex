@@ -109,6 +109,17 @@ def load_config():
             log("Unrecognized LaTeX platform and no compile command provided; aborting.")
             sys.exit(1)
 
+#############################
+# LATEX CUSTOM PYTHON SCOPE #
+#############################
+
+class Scope(object):
+    @staticmethod
+    def get():
+        global _mainScope
+        return _mainScope
+_mainScope = Scope()
+
 ##################
 # LATEX HANDLING #
 ##################
@@ -117,7 +128,7 @@ def parse_latex_file(file, temporary_list):
     log("Parsing input file '" + file + "'...", True)
     output_lines = []
 
-    if file == config['main_file']:
+    if file == os.path.basename(config['main_file']):
         output_lines.append(r"\newenvironment{pytex}{}{}")
 
     pyinput = ""
@@ -130,7 +141,7 @@ def parse_latex_file(file, temporary_list):
             if inpyinput:
                 end_match = re.match(r"^\s*\\end\{pytex\}\s*(%.*)?$", l)
                 if end_match is not None:
-                    eval(pyinput) # FIXME: Handle scoping and errors
+                    exec(pyinput, vars(Scope.get()))
                     inpyinput = False
                 else:
                     pyinput += l + "\n"
