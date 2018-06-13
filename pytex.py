@@ -45,7 +45,9 @@ config = {
     'output_suffix': '.c',
     'user_config_file': 'pytex.user.yaml',
     'main_file': "main.tex",
-    'compile_command': None
+    'compile_command': None,
+    'begin_marker': '@py{',
+    'end_marker': '}py@'
 }
 class args(object):
     __init__    = None
@@ -125,19 +127,32 @@ _mainScope = Scope()
 ##################
 
 def parse_latex_file(file, temporary_list):
+    global config
     log("Parsing input file '" + file + "'...", True)
     output_lines = []
 
     if file == os.path.basename(config['main_file']):
         output_lines.append(r"\newenvironment{pytex}{}{}")
+        sanitized_begin = config['begin_marker']
+        sanitized_end = config['end_marker']
+        for (a, b) in [("{", "\\{"), ("}", "\\}"), ("\\", "\\\\")]:
+            sanitized_begin = sanitized_begin.replace(a, b)
+            sanitized_end = sanitized_end.replace(a, b)
+
+        output_lines.append(r"\newcommand{pytexinlinebegin}{%s}" % (sanitized_begin))
+        output_lines.append(r"\newcommand{pytexinlineend}{%s}" % (sanitized_end))
 
     pyinput = ""
     inpyinput = False
+
+    pyinline = ""
+    inpyinline = False
     with open(file, "r") as f:
         for lno,l in enumerate(itertools.chain(f, [''])):
             lno += 1
             l = l.rstrip()
 
+            # If already in \begin{pytex}, look for \end{pytex} or collect the code for evaluation
             if inpyinput:
                 end_match = re.match(r"^\s*\\end\{pytex\}\s*(%.*)?$", l)
                 if end_match is not None:
@@ -145,16 +160,38 @@ def parse_latex_file(file, temporary_list):
                     inpyinput = False
                 else:
                     pyinput += l + "\n"
-                    output_lines.append("%" + l)
                     continue
 
-            # Parse for \begin{pytex} \end{pytex} here
+            # Look for @py{<code>}py@, potentially across multiple lines
+            py_match = 0
+            while True:
+                if inpyinline:
+                    pyend_match = l.find(config['end_marker'], py_match)
+                    if pyend_match != -1:
+                        pyinline += l[py_match:pyend_match] + "\n"
+                        inpyinline = False
+                    else:
+                        pyinline += l[py_match:] + "\n"
+
+                if not inpyinline and pyinline != "":
+                    exec(pyinline[:-1], vars(Scope.get()))
+                    pyinline = ""
+
+                newpy_match = l.find(config['begin_marker'], py_match)
+                if newpy_match != -1:
+                    py_match = newpy_match + len(config['begin_marker'])
+                    inpyinline = True
+                else:
+                    break
+
+            # Look for \begin{pytex}
             begin_match = re.match(r"^\s*\\begin\{pytex\}\s*(%.*)?$", l)
             if begin_match is not None:
                 pyinput = ""
                 inpyinput = True
+                continue
 
-            # Look for \input{file}
+            # Look for \input{file} and \include{file}
             input_match = re.match(r"^\s*\\((?P<isinput>input)|(?P<isinclude>include))\{(?P<inputfile>.+)\}\s*(%.*)?$", l)
             if input_match is not None:
                 input_file = input_match.group("inputfile")
