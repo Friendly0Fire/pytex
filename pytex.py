@@ -47,7 +47,8 @@ config = {
     'main_file': "main.tex",
     'compile_command': None,
     'begin_marker': '@py{',
-    'end_marker': '}py@'
+    'end_marker': '}py@',
+    'output_marker': '<-'
 }
 class args(object):
     __init__    = None
@@ -126,6 +127,14 @@ _mainScope = Scope()
 # LATEX HANDLING #
 ##################
 
+def runPython(code, output_lines):
+    global config
+    # FIXME: recognize <- (output_marker) in code and replace it with code that outputs to the compiled LaTeX file
+    # All functions should therefore have access to the Scope output_lines variable and use that to append a line when executed
+    # <- <text> = output_lines.append("<text>")
+    # Output text is parsed for @<variablename> symbols which are replaced with the variable's value
+    exec(code, vars(Scope.get()))
+
 def parse_latex_file(file, temporary_list):
     global config
     log("Parsing input file '" + file + "'...", True)
@@ -156,7 +165,7 @@ def parse_latex_file(file, temporary_list):
             if inpyinput:
                 end_match = re.match(r"^\s*\\end\{pytex\}\s*(%.*)?$", l)
                 if end_match is not None:
-                    exec(pyinput, vars(Scope.get()))
+                    runPython(pyinput, output_lines)
                     inpyinput = False
                 else:
                     pyinput += l + "\n"
@@ -174,7 +183,7 @@ def parse_latex_file(file, temporary_list):
                         pyinline += l[py_match:] + "\n"
 
                 if not inpyinline and pyinline != "":
-                    exec(pyinline[:-1], vars(Scope.get()))
+                    runPython(pyinline[:-1], output_lines)
                     pyinline = ""
 
                 newpy_match = l.find(config['begin_marker'], py_match)
