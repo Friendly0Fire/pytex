@@ -165,15 +165,11 @@ def parse_latex_file(file, temporary_list):
     output_lines = []
 
     if file == os.path.basename(config['main_file']):
-        output_lines.append(r"\newenvironment{pytex}{}{}")
         sanitized_begin = config['begin_marker']
         sanitized_end = config['end_marker']
         for (a, b) in [("{", "\\{"), ("}", "\\}"), ("\\", "\\\\")]:
             sanitized_begin = sanitized_begin.replace(a, b)
             sanitized_end = sanitized_end.replace(a, b)
-
-        output_lines.append(r"\newcommand{pytexinlinebegin}{%s}" % (sanitized_begin))
-        output_lines.append(r"\newcommand{pytexinlineend}{%s}" % (sanitized_end))
 
     pyinput = ""
     inpyinput = False
@@ -330,7 +326,7 @@ def compile_latex(temporary_list):
     for _,fo in temporary_list:
         for i in range(1, 3+1):
             try:
-                os.remove(fo)
+                #os.remove(fo)
                 break
             except PermissionError:
                 log("Could not delete file %s, %s" % (fo, "retrying..." if i < 3 else "giving up."))
