@@ -117,10 +117,18 @@ def load_config():
 #############################
 
 class Scope(object):
+    def __init__(self):
+        self.out = None
+
     @staticmethod
     def get():
         global _mainScope
         return _mainScope
+
+    def execute(self, code, output):
+        self.out = output
+        exec(code, vars(self))
+        self.out = None
 _mainScope = Scope()
 
 ##################
@@ -129,11 +137,27 @@ _mainScope = Scope()
 
 def runPython(code, output_lines):
     global config
-    # FIXME: recognize <- (output_marker) in code and replace it with code that outputs to the compiled LaTeX file
-    # All functions should therefore have access to the Scope output_lines variable and use that to append a line when executed
-    # <- <text> = output_lines.append("<text>")
-    # Output text is parsed for @<variablename> symbols which are replaced with the variable's value
-    exec(code, vars(Scope.get()))
+
+    codelines = [i.rstrip() for i in code.splitlines(False)]
+    finalcode = ""
+    for codeline in codelines:
+        codematch = re.match(r"^(?P<indent>\s*)<-(\((?P<marker>.*)\))?\s+(?P<text>.*)$", codeline)
+        if codematch is not None:
+            textline = "\"" + codematch.group("text") + "\""
+
+            varmarker = "@@"
+            if codematch.group("marker") is not None:
+                varmarker = codematch.group("marker")
+
+            inlinevars = re.findall(re.escape(varmarker) + "[a-zA-Z0-9_\-]+", textline)
+            for inlinevar in inlinevars:
+                textline = textline.replace(inlinevar, "\" + " + inlinevar[len(varmarker):] + " + \"")
+
+            finalcode += codematch.group("indent") + "out.append(" + textline + ")\n"
+        else:
+            finalcode += codeline + "\n"
+
+    Scope.get().execute(finalcode, output_lines)
 
 def parse_latex_file(file, temporary_list):
     global config
@@ -156,9 +180,11 @@ def parse_latex_file(file, temporary_list):
 
     pyinline = ""
     inpyinline = False
+    pyinlineloc = (-1, -1)
+    end_marker_len = len(config['end_marker'])
+    begin_marker_len = len(config['begin_marker'])
     with open(file, "r") as f:
         for lno,l in enumerate(itertools.chain(f, [''])):
-            lno += 1
             l = l.rstrip()
 
             # If already in \begin{pytex}, look for \end{pytex} or collect the code for evaluation
@@ -169,7 +195,7 @@ def parse_latex_file(file, temporary_list):
                     inpyinput = False
                 else:
                     pyinput += l + "\n"
-                    continue
+                continue
 
             # Look for @py{<code>}py@, potentially across multiple lines
             py_match = 0
@@ -178,18 +204,30 @@ def parse_latex_file(file, temporary_list):
                     pyend_match = l.find(config['end_marker'], py_match)
                     if pyend_match != -1:
                         pyinline += l[py_match:pyend_match] + "\n"
+                        l = l[:py_match-begin_marker_len] + l[pyend_match+end_marker_len:]
                         inpyinline = False
                     else:
                         pyinline += l[py_match:] + "\n"
+                        l = l[:py_match-begin_marker_len]
 
                 if not inpyinline and pyinline != "":
-                    runPython(pyinline[:-1], output_lines)
+                    temp_out = []
+                    runPython(pyinline[:-1], temp_out)
+
+                    if pyinlineloc[0] == lno:
+                        l = l[:pyinlineloc[1]] + "\n".join(temp_out) + l[pyinlineloc[1]:]
+                    else:
+                        l2 = output_lines[lno]
+                        output_lines[lno] = l2[:pyinlineloc[1]] + "\n".join(temp_out) + l2[pyinlineloc[1]:]
+
                     pyinline = ""
+                    pyinlineloc = (-1, -1)
 
                 newpy_match = l.find(config['begin_marker'], py_match)
                 if newpy_match != -1:
-                    py_match = newpy_match + len(config['begin_marker'])
+                    py_match = newpy_match + begin_marker_len
                     inpyinline = True
+                    pyinlineloc = (lno, newpy_match)
                 else:
                     break
 
@@ -282,6 +320,7 @@ def compile_latex(temporary_list):
                 log(line)
                 q.task_done()
             except queue.Empty:
+                time.sleep(0.25)
                 pass
         log("Compiler return code: " + str(proc.returncode))
         proc.stdout.close()
@@ -290,7 +329,7 @@ def compile_latex(temporary_list):
     for _,fo in temporary_list:
         for i in range(1, 3+1):
             try:
-                os.remove(fo)
+                #os.remove(fo)
                 break
             except PermissionError:
                 log("Could not delete file %s, %s" % (fo, "retrying..." if i < 3 else "giving up."))
