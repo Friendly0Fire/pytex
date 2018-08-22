@@ -326,7 +326,7 @@ def compile_latex(temporary_list):
     for _,fo in temporary_list:
         for i in range(1, 3+1):
             try:
-                #os.remove(fo)
+                os.remove(fo)
                 break
             except PermissionError:
                 log("Could not delete file %s, %s" % (fo, "retrying..." if i < 3 else "giving up."))
