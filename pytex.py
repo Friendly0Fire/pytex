@@ -141,7 +141,7 @@ def runPython(code, output_lines):
     codelines = [i.rstrip() for i in code.splitlines(False)]
     finalcode = ""
     for codeline in codelines:
-        codematch = re.match(r"^(?P<indent>\s*)<-(\((?P<marker>.*)\))?\s+(?P<text>.*)$", codeline)
+        codematch = re.match(r"^(?P<indent>\s*)" + re.escape(config['output_marker']) + r"(\((?P<marker>.*)\))?\s+(?P<text>.*)$", codeline)
         if codematch is not None:
             textline = "\"" + codematch.group("text") + "\""
 
@@ -149,7 +149,7 @@ def runPython(code, output_lines):
             if codematch.group("marker") is not None:
                 varmarker = codematch.group("marker")
 
-            inlinevars = re.findall(re.escape(varmarker) + "[a-zA-Z0-9_\-]+", textline)
+            inlinevars = re.findall(re.escape(varmarker) + r"[a-zA-Z0-9_\-]+", textline)
             for inlinevar in inlinevars:
                 textline = textline.replace(inlinevar, "\" + " + inlinevar[len(varmarker):] + " + \"")
 
@@ -265,7 +265,8 @@ def parse_latex(temporary_list):
     path = os.path.dirname(config['main_file'])
     file = os.path.basename(config['main_file'])
 
-    os.chdir(path)
+    if path:
+        os.chdir(path)
 
     parse_latex_file(file, temporary_list)
 
@@ -329,7 +330,7 @@ def compile_latex(temporary_list):
     for _,fo in temporary_list:
         for i in range(1, 3+1):
             try:
-                #os.remove(fo)
+                os.remove(fo)
                 break
             except PermissionError:
                 log("Could not delete file %s, %s" % (fo, "retrying..." if i < 3 else "giving up."))
